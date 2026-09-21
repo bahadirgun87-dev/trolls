@@ -67,53 +67,68 @@ wss.on('connection', (ws) => {
             console.log(`Message from ${clientId}:`, message.type);
 
             switch (message.type) {
-                case 'register':
+                case 'join':
                     // Register username
                     const client = clients.get(clientId);
                     if (client) {
                         client.username = message.username;
-                        console.log(`Client ${clientId} registered as: ${message.username}`);
+                        console.log(`Client ${clientId} joined as: ${message.username}`);
                     }
 
-                    // Send current users list
-                    const usersList = Array.from(clients.entries()).map(([id, data]) => ({
-                        clientId: id,
-                        username: data.username,
-                        status: data.status
-                    }));
-
-                    ws.send(JSON.stringify({
-                        type: 'users-list',
-                        users: usersList,
-                        timestamp: Date.now()
-                    }));
-
-                    // Notify others
+                    // Notify others about new user
                     broadcast(clientId, {
-                        type: 'user-registered',
-                        clientId,
+                        type: 'user-joined',
+                        userId: clientId,
                         username: message.username,
                         timestamp: Date.now()
                     });
                     break;
 
                 case 'offer':
+                    // Forward offer to target
+                    if (message.to) {
+                        sendToClient(message.to, {
+                            type: 'offer',
+                            from: clientId,
+                            fromUsername: clients.get(clientId)?.username,
+                            offer: message.offer,
+                            timestamp: Date.now()
+                        });
+                    }
+                    break;
+
                 case 'answer':
+                    // Forward answer to target
+                    if (message.to) {
+                        sendToClient(message.to, {
+                            type: 'answer',
+                            from: clientId,
+                            answer: message.answer,
+                            timestamp: Date.now()
+                        });
+                    }
+                    break;
+
                 case 'ice-candidate':
-                    // Forward WebRTC signaling messages
-                    if (message.targetId) {
-                        sendToClient(message.targetId, {
-                            ...message,
-                            senderId: clientId,
+                    // Forward ICE candidate to target
+                    if (message.to) {
+                        sendToClient(message.to, {
+                            type: 'ice-candidate',
+                            from: clientId,
+                            candidate: message.candidate,
                             timestamp: Date.now()
                         });
+                    }
+                    break;
+
+                case 'chat-message':
+                    // Forward chat message
+                    if (message.recipient) {
+                        // Private message
+                        sendToClient(message.recipient, message);
                     } else {
-                        // Broadcast to all if no specific target
-                        broadcast(clientId, {
-                            ...message,
-                            senderId: clientId,
-                            timestamp: Date.now()
-                        });
+                        // Broadcast to all
+                        broadcast(clientId, message);
                     }
                     break;
 
